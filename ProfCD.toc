@@ -8,7 +8,7 @@
 ## X-Curse-Project-ID: 1818860
 ## X-Wago-ID: x61x9AN1
 ## SavedVariables: ProfCDDB
-## IconTexture: Interface\Icons\INV_Misc_PocketWatch_01
+## IconTexture: Interface\AddOns\ProfCD\Icons\minimap
 ## AddonCompartmentFunc: ProfCD_OnCompartmentClick
 
 Libs\LibStub\LibStub.lua

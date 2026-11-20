@@ -423,7 +423,7 @@ local function registerMinimap()
 	local obj = LDB:NewDataObject(ADDON, {
 		type = "launcher",
 		text = ADDON,
-		icon = "Interface\\Icons\\INV_Misc_PocketWatch_01",
+		icon = "Interface\\AddOns\\ProfCD\\Icons\\minimap",
 		OnClick = function() toggleWindow() end,
 		OnTooltipShow = fillTooltip,
 	})
