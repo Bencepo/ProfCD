@@ -5,6 +5,8 @@
 ## Version: @project-version@
 ## X-Website: https://bencepo.github.io/profcd/
 ## X-License: All Rights Reserved
+## X-Curse-Project-ID: 1818860
+## X-Wago-ID: x61x9AN1
 ## SavedVariables: ProfCDDB
 ## IconTexture: Interface\Icons\INV_Misc_PocketWatch_01
 ## AddonCompartmentFunc: ProfCD_OnCompartmentClick
