@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
+  "runtime.version": "Lua 5.1",
+  "workspace.ignoreDir": [
+    "Libs",
+    ".release",
+    "tests",
+    "web",
+    ".github"
+  ],
+  "diagnostics.globals": [
+    "GetNumTradeSkills",
+    "GetTradeSkillNumReagents",
+    "GetTradeSkillReagentInfo",
+    "GetTradeSkillReagentItemLink",
+    "GetTradeSkillRecipeLink",
+    "MAX_ACCOUNT_MACROS",
+    "RAID_CLASS_COLORS",
+    "SlashCmdList",
+    "UISpecialFrames",
+    "issecretvalue"
+  ]
+}

@@ -1,0 +1,17 @@
+## Interface: 16001
+## Title: ProfCD
+## Notes: Profession cooldowns at a glance: hover the minimap button for the timers of all your characters, click it to see which crafts you have the mats for.
+## Author: Bencepo
+## Version: @project-version@
+## X-Website: https://bencepo.github.io/profcd/
+## X-License: All Rights Reserved
+## SavedVariables: ProfCDDB
+## IconTexture: Interface\Icons\INV_Misc_PocketWatch_01
+## AddonCompartmentFunc: ProfCD_OnCompartmentClick
+
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+Libs\BencepoUI\BencepoUI.lua
+ProfCD.lua
