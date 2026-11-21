@@ -67,7 +67,7 @@ for _, cd in ipairs(TRACKED) do
 	end
 end
 
-local db, me, myRealm, win, LDBIcon
+local db, me, myRealm, myServer, win, LDBIcon
 
 ---------------------------------------------------------------- helpers
 -- Older API functions, used only where the C_ namespaces are missing.
@@ -135,7 +135,9 @@ end
 
 local function nameOf(c)
 	local n = c.name
-	if c.realm ~= myRealm then n = n .. "-" .. c.realm end
+	-- realm suffix only for characters on another server (the realm name itself can vary)
+	local other = (c.server and myServer) and c.server ~= myServer or (not c.server and c.realm ~= myRealm)
+	if other then n = n .. "-" .. c.realm end
 	local col = RAID_CLASS_COLORS and RAID_CLASS_COLORS[c.class]
 	if col and col.colorStr then return "|c" .. col.colorStr .. n .. "|r" end
 	return n
@@ -475,11 +477,24 @@ events:SetScript("OnEvent", function(self, event, arg1)
 	elseif event == "PLAYER_LOGIN" then
 		myRealm = GetRealmName()
 		local name = UnitName("player")
-		local key = name .. "-" .. myRealm
-		me = db.chars[key] or {}
+		local class = select(2, UnitClass("player"))
+		-- Characters are kept by their GUID: the realm name the server reports can change
+		-- (seen on Forever), which made the same character show up twice. Older entries of
+		-- this character (same GUID, or same name and class without a GUID) are merged.
+		local guid = UnitGUID("player")
+		if guid and issecret(guid) then guid = nil end
+		myServer = guid and guid:match("^Player%-(%d+)%-")
+		local key = guid or (name .. "-" .. myRealm)
+		local best
+		for k, c in pairs(db.chars) do
+			if k == key or (guid and c.guid == guid) or (not c.guid and c.name == name and c.class == class) then
+				if not best or (c.seen or 0) > (best.seen or 0) then best = c end
+				db.chars[k] = nil
+			end
+		end
+		me = best or {}
 		db.chars[key] = me
-		me.name, me.realm = name, myRealm
-		me.class = select(2, UnitClass("player"))
+		me.name, me.realm, me.class, me.guid, me.server = name, myRealm, class, guid, myServer
 		me.cds = me.cds or {}
 		me.known = me.known or {}
 		me.mats = me.mats or {}
