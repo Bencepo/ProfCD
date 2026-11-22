@@ -13,6 +13,7 @@ globals = {
 	"ProfCD_OnCompartmentClick",
 	"SLASH_PROFCD1",
 	"SLASH_PROFCD2",
+	"StaticPopupDialogs",
 }
 
 exclude_files = { ".release/**", "Libs/**" }

@@ -5,7 +5,7 @@ ProfCD: profession cooldown tracker for WoW Forever (Lua 5.1, modern C_Spell/C_I
 ## Layout
 
 - `ProfCD.lua`: everything (tracked list, scanning, tooltip, window, macro, events).
-- `Libs/`: LibStub, CallbackHandler, LibDataBroker, LibDBIcon (minimap button), BencepoUI (shared settings-window toolkit, also in TrinketDock, ProcFlare, VendorFloor, TransmogSweep, SpikeSpotter; bump its LibStub minor version on every change). `opts.bugUrl` gives the "Report a bug" button.
+- `Libs/`: LibStub, CallbackHandler, LibDataBroker, LibDBIcon (minimap button), BencepoUI (shared settings-window toolkit of all Bencepo addons). `opts.bugUrl` gives the "Report a bug" button. BencepoUI must be the same file in each addon (canonical: minor 4, Nov 2026). Change it in one repo, bump the LibStub minor, copy it to the others: two different copies with the same minor make the result depend on load order.
 - `media/logo.png`: project logo for CurseForge, Wago and the website (not packaged).
 
 ## Forever facts (from Ben)
@@ -20,6 +20,6 @@ ProfCD: profession cooldown tracker for WoW Forever (Lua 5.1, modern C_Spell/C_I
 - Salt Shaker: item cooldown is only read while the shaker is in the bags; in the bank the stored value is kept.
 - Macro: account macro "ProfCD" (`/pcd`) is created when the minimap button is turned off (always) and at login when it is hidden (only once, `db.macroMade`), so a deleted macro is not forced back. Not in combat: deferred to `PLAYER_REGEN_ENABLED`.
 - Scans are coalesced (`queueScan`), never per event. Window redraws once a second only while shown.
-- UI texts in English. Settings in the BencepoUI window, not in Blizzard's options.
+- English only: UI texts and descriptions, no translations, no `Notes-xxXX` in the .toc. Buttons instead of chat commands (forgetting an alt: the x on its line). Settings in the BencepoUI window, not in Blizzard's options.
 - CI runs luacheck and LuaLS with the WoW API annotations; LuaLS must report zero diagnostics or the release stops. New Blizzard globals go into `.luarc.json`; older API fallbacks go through `LEGACY` so they do not show as deprecated.
 - Release: new version heading at the top of `CHANGELOG.md` (`## 1.0.1`), push to `main`; the workflow tags, builds and uploads to CurseForge and Wago (secrets `CF_API_KEY`, `WAGO_API_TOKEN`). The release reaches players right away, so test changes in the game before pushing.

@@ -274,6 +274,20 @@ end
 ---------------------------------------------------------------- window
 local rows = {}
 local TOP = -72
+local drawWindow
+
+-- Forget another character (its cooldowns and mats), after a question.
+local function forgetChar(c)
+	for key, x in pairs(db.chars) do
+		if x == c and c ~= me then db.chars[key] = nil end
+	end
+	if drawWindow then drawWindow() end
+end
+StaticPopupDialogs["PROFCD_FORGET"] = {
+	text = "Forget %s? Its cooldowns and mats leave ProfCD until it logs in again.",
+	button1 = YES, button2 = NO, timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+	OnAccept = function(_, c) forgetChar(c) end,
+}
 
 local function getRow(i)
 	if rows[i] then return rows[i] end
@@ -289,14 +303,37 @@ local function getRow(i)
 	r.status:SetJustifyH("LEFT")
 	r.status:SetWidth(250)
 	r.status:SetWordWrap(false)
+	-- x on the line of another character: forget it
+	r.forget = CreateFrame("Button", nil, win)
+	r.forget:SetSize(16, 16)
+	local x = r.forget:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	x:SetPoint("CENTER")
+	x:SetText("x")
+	x:SetTextColor(0.55, 0.59, 0.65)
+	r.forget:SetFontString(x)
+	r.forget:SetScript("OnEnter", function(self)
+		x:SetTextColor(1, 0.4, 0.4)
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:AddLine("Forget this character")
+		GameTooltip:AddLine("Removes its cooldowns and mats from ProfCD, e.g. a deleted or renamed character. It comes back when it logs in.", 1, 1, 1, true)
+		GameTooltip:Show()
+	end)
+	r.forget:SetScript("OnLeave", function()
+		x:SetTextColor(0.55, 0.59, 0.65)
+		GameTooltip:Hide()
+	end)
+	r.forget:SetScript("OnClick", function(self)
+		if self.c then StaticPopup_Show("PROFCD_FORGET", self.c.name, nil, self.c) end
+	end)
+	r.forget:Hide()
 	rows[i] = r
 	return r
 end
 
-local function drawWindow()
+drawWindow = function()
 	if not (win and win:IsShown()) then return end
 	local i, y = 0, TOP
-	local function add(kind, icon, label, timeTxt, status, indent)
+	local function add(kind, icon, label, timeTxt, status, indent, other)
 		i = i + 1
 		local r = getRow(i)
 		if kind == "char" and i > 1 then y = y - 8 end
@@ -318,12 +355,16 @@ local function drawWindow()
 		r.status:SetPoint("TOPLEFT", win, "TOPLEFT", 316, y - 3)
 		r.status:SetText(status or "")
 		r.status:Show()
+		r.forget.c = other
+		r.forget:ClearAllPoints()
+		r.forget:SetPoint("TOPRIGHT", win, "TOPRIGHT", -14, y)
+		r.forget:SetShown(other ~= nil)
 		y = y - (kind == "char" and 22 or 18)
 	end
 	for _, c in ipairs(charList(db.showAlts)) do
 		if next(c.cds) then
 			local sub = c == me and "this character" or ("as of " .. date("%d.%m. %H:%M", c.seen or 0))
-			add("char", nil, nameOf(c) .. "  |cff8d97a5" .. sub .. "|r")
+			add("char", nil, nameOf(c) .. "  |cff8d97a5" .. sub .. "|r", nil, nil, nil, c ~= me and c or nil)
 			for _, cd in ipairs(TRACKED) do
 				local ra = c.cds[cd.key]
 				if ra then
@@ -338,7 +379,7 @@ local function drawWindow()
 	end
 	for j = i + 1, #rows do
 		local r = rows[j]
-		r.icon:Hide(); r.label:Hide(); r.time:Hide(); r.status:Hide()
+		r.icon:Hide(); r.label:Hide(); r.time:Hide(); r.status:Hide(); r.forget:Hide()
 	end
 	win:SetHeight(-y + 46)
 end

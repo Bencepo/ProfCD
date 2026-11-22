@@ -14,10 +14,14 @@
     "GetTradeSkillReagentInfo",
     "GetTradeSkillReagentItemLink",
     "GetTradeSkillRecipeLink",
+    "issecretvalue",
     "MAX_ACCOUNT_MACROS",
+    "NO",
     "RAID_CLASS_COLORS",
     "SlashCmdList",
+    "StaticPopup_Show",
+    "StaticPopupDialogs",
     "UISpecialFrames",
-    "issecretvalue"
+    "YES"
   ]
 }
