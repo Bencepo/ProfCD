@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: chat notifications when a cooldown finishes while online are no longer missed before the 20-second check runs.
+- The ProfCD window now scrolls when many characters and cooldowns are listed instead of growing past the screen edge, updates right away after crafts or bag changes, and no longer rebuilds its full layout every second.
+- Lower overhead: profession reagent scanning is debounced on rapid `TRADE_SKILL_UPDATE` bursts, reagent counts are deduplicated and updated in place, and the ready-check ticker only runs when chat notices are enabled.
+- Shared settings window updated to BencepoUI 5.
+
 ## 1.0.3
 
 - Other characters can be forgotten with the x on their line in the window (after a question), e.g. a deleted or renamed character. No chat command needed.

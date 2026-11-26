@@ -67,30 +67,52 @@ for _, cd in ipairs(TRACKED) do
 	end
 end
 
-local db, me, myRealm, myServer, win, LDBIcon
+local db, me, myRealm, myServer, win, scrollFrame, scrollChild, LDBIcon
+local readyTicker
 
 ---------------------------------------------------------------- helpers
 -- Older API functions, used only where the C_ namespaces are missing.
-local LEGACY = setmetatable({}, { __index = function(_, name) return _G[name] end })
+local LEGACY = setmetatable({}, {
+	__index = function(t, name)
+		local v = _G[name]
+		t[name] = v or false
+		return v
+	end,
+})
+local function legacyFn(name)
+	local fn = LEGACY[name]
+	return fn ~= false and fn or nil
+end
+
 local function itemCount(id, bank)
 	if C_Item and C_Item.GetItemCount then return C_Item.GetItemCount(id, bank) or 0 end
-	return LEGACY.GetItemCount and LEGACY.GetItemCount(id, bank) or 0
+	local fn = legacyFn("GetItemCount")
+	return fn and fn(id, bank) or 0
 end
 
 local function itemName(id)
 	local n = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)
-	if not n and LEGACY.GetItemInfo then n = (LEGACY.GetItemInfo(id)) end
+	if not n then
+		local fn = legacyFn("GetItemInfo")
+		if fn then n = (fn(id)) end
+	end
 	return n or ITEM_NAMES[id] or ("item " .. id)
 end
 
 local function itemIcon(id)
-	return (C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(id))
-		or (LEGACY.GetItemIcon and LEGACY.GetItemIcon(id)) or 134400
+	if C_Item and C_Item.GetItemIconByID then
+		local icon = C_Item.GetItemIconByID(id)
+		if icon then return icon end
+	end
+	local fn = legacyFn("GetItemIcon")
+	return (fn and fn(id)) or 134400
 end
 
 local function isKnown(id)
-	if LEGACY.IsPlayerSpell and LEGACY.IsPlayerSpell(id) then return true end
-	if LEGACY.IsSpellKnown and LEGACY.IsSpellKnown(id) then return true end
+	local fn = legacyFn("IsPlayerSpell")
+	if fn and fn(id) then return true end
+	fn = legacyFn("IsSpellKnown")
+	if fn and fn(id) then return true end
 	if C_SpellBook and C_SpellBook.IsSpellKnown and C_SpellBook.IsSpellKnown(id, 0) then return true end
 	return false
 end
@@ -110,14 +132,15 @@ local function spellCD(id)
 		local info = C_Spell.GetSpellCooldown(id)
 		if not info then return nil end
 		return normalize(info.startTime, info.duration)
-	elseif LEGACY.GetSpellCooldown then
-		return normalize(LEGACY.GetSpellCooldown(id))
 	end
+	local fn = legacyFn("GetSpellCooldown")
+	if fn then return normalize(fn(id)) end
 end
 
 local function itemCD(id)
 	if C_Container and C_Container.GetItemCooldown then return normalize(C_Container.GetItemCooldown(id)) end
-	if LEGACY.GetItemCooldown then return normalize(LEGACY.GetItemCooldown(id)) end
+	local fn = legacyFn("GetItemCooldown")
+	if fn then return normalize(fn(id)) end
 end
 
 local function reagentsOf(r)
@@ -144,22 +167,28 @@ local function nameOf(c)
 end
 
 local function matStatus(c, r)
-	local missing, inBank, n = {}, false, math.huge
+	local missing, inBank, n = nil, false, math.huge
 	for _, rg in ipairs(reagentsOf(r)) do
 		local id, need = rg[1], rg[2]
 		local m = c.mats[id]
 		local bags, total = m and m[1] or 0, m and m[2] or 0
 		n = math.min(n, math.floor(total / need))
 		if bags < need then
-			if total >= need then inBank = true
-			else missing[#missing + 1] = (need - total) .. "x " .. itemName(id) end
+			if total >= need then
+				inBank = true
+			else
+				missing = missing or {}
+				missing[#missing + 1] = (need - total) .. "x " .. itemName(id)
+			end
 		end
 	end
-	if #missing > 0 then return "|cffff6060Missing: " .. table.concat(missing, ", ") .. "|r" end
+	if missing then return "|cffff6060Missing: " .. table.concat(missing, ", ") .. "|r" end
 	local txt = inBank and "|cffffd24dMats in bank|r" or "|cff60ff60Mats in bags|r"
 	if n ~= math.huge and n > 1 then txt = txt .. " |cff8d97a5(" .. n .. "x)|r" end
 	return txt
 end
+
+local function sortCharsByName(a, b) return a.name < b.name end
 
 local function charList(alts)
 	local list = { me }
@@ -168,16 +197,59 @@ local function charList(alts)
 		for _, c in pairs(db.chars) do
 			if c ~= me and next(c.cds) then others[#others + 1] = c end
 		end
-		table.sort(others, function(a, b) return a.name < b.name end)
-		for _, c in ipairs(others) do list[#list + 1] = c end
+		table.sort(others, sortCharsByName)
+		for i = 1, #others do list[#list + 1] = others[i] end
 	end
 	return list
 end
 
+---------------------------------------------------------------- notices
+local announced = {}
+local loginReadyDone = false
+local function say(msg) print(ACCENT_HEX .. "ProfCD:|r " .. msg) end
+
+local function announceList(ready)
+	if ready and #ready > 0 then
+		say(table.concat(ready, ", ") .. (#ready > 1 and " are" or " is") .. " ready.")
+	end
+end
+
+local function checkReady(login)
+	if not (me and db and db.notify) then return end
+	local now, ready = time(), nil
+	for _, cd in ipairs(TRACKED) do
+		local ra = me.cds[cd.key]
+		if ra and ra <= now and announced[cd.key] ~= ra then
+			announced[cd.key] = ra
+			if login or ra > 0 then
+				ready = ready or {}
+				ready[#ready + 1] = cd.label
+			end
+		end
+	end
+	announceList(ready)
+end
+
+local function onReadyTick() checkReady(false) end
+
+local function syncNotifyTicker()
+	if not loginReadyDone then return end
+	if db and db.notify then
+		if not readyTicker then readyTicker = C_Timer.NewTicker(20, onReadyTick) end
+	elseif readyTicker then
+		readyTicker:Cancel()
+		readyTicker = nil
+	end
+end
+
 ---------------------------------------------------------------- scanning
+local drawWindow
+local seenMats = {}
+
 local function scan()
 	if not me then return end
 	local now = time()
+	local justReady
 	for _, cd in ipairs(TRACKED) do
 		local any, unsure, best = false, false, 0
 		local inBags = cd.item and itemCount(cd.item, false) > 0
@@ -196,26 +268,50 @@ local function scan()
 				if rem == nil then unsure = true elseif rem > best then best = rem end
 			end
 		end
+		local prev = me.cds[cd.key]
 		if not any then
 			me.cds[cd.key] = nil
 		elseif best > 0 then
 			me.cds[cd.key] = math.floor(now + best + 0.5)
-		elseif not unsure or me.cds[cd.key] == nil then
+		elseif not unsure or prev == nil then
+			-- Detect a cooldown finishing while online before overwriting its timestamp with 0.
+			if loginReadyDone and prev and prev > 0 and announced[cd.key] ~= prev then
+				announced[cd.key] = 0
+				if db and db.notify then
+					justReady = justReady or {}
+					justReady[#justReady + 1] = cd.label
+				end
+			elseif prev and prev > 0 and announced[cd.key] == prev then
+				announced[cd.key] = 0
+			end
 			me.cds[cd.key] = 0
 		end
 	end
-	-- mats of every known craft: bags and bags + bank
+	-- mats of every known craft: bags and bags + bank (deduplicated per reagent ID)
+	wipe(seenMats)
 	for _, cd in ipairs(TRACKED) do
 		for _, r in ipairs(cd.recipes) do
 			if me.known[r.id] then
 				for _, rg in ipairs(reagentsOf(r)) do
-					local bags = itemCount(rg[1], false)
-					me.mats[rg[1]] = { bags, math.max(itemCount(rg[1], true), bags) }
+					local id = rg[1]
+					if not seenMats[id] then
+						seenMats[id] = true
+						local bags = itemCount(id, false)
+						local total = math.max(itemCount(id, true), bags)
+						local slot = me.mats[id]
+						if slot then
+							slot[1], slot[2] = bags, total
+						else
+							me.mats[id] = { bags, total }
+						end
+					end
 				end
 			end
 		end
 	end
 	me.seen = now
+	announceList(justReady)
+	if win and win:IsShown() and drawWindow then drawWindow() end
 end
 
 -- Reagents as the open profession window lists them (Classic trade skill API).
@@ -237,14 +333,28 @@ local function learnReagents()
 	end
 end
 
+local reagentsQueued = false
+local function runLearnReagents()
+	reagentsQueued = false
+	learnReagents()
+end
+
+local function queueLearnReagents()
+	if reagentsQueued then return end
+	reagentsQueued = true
+	C_Timer.After(0.3, runLearnReagents)
+end
+
 local scanQueued = false
+local function runQueuedScan()
+	scanQueued = false
+	scan()
+end
+
 local function queueScan(delay)
 	if scanQueued then return end
 	scanQueued = true
-	C_Timer.After(delay or 1, function()
-		scanQueued = false
-		scan()
-	end)
+	C_Timer.After(delay or 1, runQueuedScan)
 end
 
 ---------------------------------------------------------------- tooltip
@@ -273,8 +383,7 @@ end
 
 ---------------------------------------------------------------- window
 local rows = {}
-local TOP = -72
-local drawWindow
+local MAX_VIEW_H = 440
 
 -- Forget another character (its cooldowns and mats), after a question.
 local function forgetChar(c)
@@ -291,20 +400,21 @@ StaticPopupDialogs["PROFCD_FORGET"] = {
 
 local function getRow(i)
 	if rows[i] then return rows[i] end
+	local parent = scrollChild
 	local r = {}
-	r.icon = win:CreateTexture(nil, "ARTWORK")
+	r.icon = parent:CreateTexture(nil, "ARTWORK")
 	r.icon:SetSize(16, 16)
 	r.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-	r.label = win:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	r.label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	r.label:SetJustifyH("LEFT")
-	r.time = win:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	r.time = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	r.time:SetJustifyH("RIGHT")
-	r.status = win:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	r.status = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	r.status:SetJustifyH("LEFT")
-	r.status:SetWidth(250)
+	r.status:SetWidth(226)
 	r.status:SetWordWrap(false)
 	-- x on the line of another character: forget it
-	r.forget = CreateFrame("Button", nil, win)
+	r.forget = CreateFrame("Button", nil, parent)
 	r.forget:SetSize(16, 16)
 	local x = r.forget:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	x:SetPoint("CENTER")
@@ -330,58 +440,65 @@ local function getRow(i)
 	return r
 end
 
+local function placeRow(i, y, kind, icon, label, timeTxt, status, other)
+	local parent = scrollChild
+	local r = getRow(i)
+	if kind == "char" and i > 1 then y = y - 8 end
+	r.icon:ClearAllPoints()
+	r.icon:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, y)
+	if icon then r.icon:SetTexture(icon) end
+	r.icon:SetShown(icon ~= nil)
+	r.label:ClearAllPoints()
+	r.label:SetPoint("TOPLEFT", parent, "TOPLEFT", icon and 22 or 0, y - 2)
+	r.label:SetFontObject(kind == "char" and "GameFontNormal" or "GameFontHighlight")
+	r.label:SetText(label)
+	r.label:Show()
+	r.time:ClearAllPoints()
+	r.time:SetPoint("TOPRIGHT", parent, "TOPLEFT", 284, y - 2)
+	r.time:SetText(timeTxt or "")
+	r.time:Show()
+	r.status:ClearAllPoints()
+	r.status:SetPoint("TOPLEFT", parent, "TOPLEFT", 300, y - 3)
+	r.status:SetText(status or "")
+	r.status:Show()
+	r.forget.c = other
+	r.forget:ClearAllPoints()
+	r.forget:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -4, y)
+	r.forget:SetShown(other ~= nil)
+	return y - (kind == "char" and 22 or 18)
+end
+
 drawWindow = function()
 	if not (win and win:IsShown()) then return end
-	local i, y = 0, TOP
-	local function add(kind, icon, label, timeTxt, status, indent, other)
-		i = i + 1
-		local r = getRow(i)
-		if kind == "char" and i > 1 then y = y - 8 end
-		local x = 16 + (indent or 0)
-		r.icon:ClearAllPoints()
-		r.icon:SetPoint("TOPLEFT", win, "TOPLEFT", x, y)
-		if icon then r.icon:SetTexture(icon) end
-		r.icon:SetShown(icon ~= nil)
-		r.label:ClearAllPoints()
-		r.label:SetPoint("TOPLEFT", win, "TOPLEFT", icon and x + 22 or x, y - 2)
-		r.label:SetFontObject(kind == "char" and "GameFontNormal" or (kind == "recipe" and "GameFontHighlightSmall" or "GameFontHighlight"))
-		r.label:SetText(label)
-		r.label:Show()
-		r.time:ClearAllPoints()
-		r.time:SetPoint("TOPRIGHT", win, "TOPLEFT", 300, y - 2)
-		r.time:SetText(timeTxt or "")
-		r.time:Show()
-		r.status:ClearAllPoints()
-		r.status:SetPoint("TOPLEFT", win, "TOPLEFT", 316, y - 3)
-		r.status:SetText(status or "")
-		r.status:Show()
-		r.forget.c = other
-		r.forget:ClearAllPoints()
-		r.forget:SetPoint("TOPRIGHT", win, "TOPRIGHT", -14, y)
-		r.forget:SetShown(other ~= nil)
-		y = y - (kind == "char" and 22 or 18)
-	end
+	local i, y = 0, 0
 	for _, c in ipairs(charList(db.showAlts)) do
 		if next(c.cds) then
 			local sub = c == me and "this character" or ("as of " .. date("%d.%m. %H:%M", c.seen or 0))
-			add("char", nil, nameOf(c) .. "  |cff8d97a5" .. sub .. "|r", nil, nil, nil, c ~= me and c or nil)
+			i = i + 1
+			y = placeRow(i, y, "char", nil, nameOf(c) .. "  |cff8d97a5" .. sub .. "|r", nil, nil, c ~= me and c or nil)
 			for _, cd in ipairs(TRACKED) do
 				local ra = c.cds[cd.key]
 				if ra then
 					local r = cd.recipes[1]
-					add("cd", itemIcon(cd.icon), cd.label, fmt(ra), c.known[r.id] and matStatus(c, r))
+					i = i + 1
+					y = placeRow(i, y, "cd", itemIcon(cd.icon), cd.label, fmt(ra), c.known[r.id] and matStatus(c, r), nil)
 				end
 			end
 		end
 	end
 	if i == 0 then
-		add("char", nil, "|cff8d97a5No profession cooldowns known yet. Log in once with each crafter.|r")
+		i = 1
+		y = placeRow(i, y, "char", nil, "|cff8d97a5No profession cooldowns known yet. Log in once with each crafter.|r")
 	end
 	for j = i + 1, #rows do
 		local r = rows[j]
 		r.icon:Hide(); r.label:Hide(); r.time:Hide(); r.status:Hide(); r.forget:Hide()
 	end
-	win:SetHeight(-y + 46)
+	local contentH = math.max(-y, 24)
+	local viewH = math.min(contentH, MAX_VIEW_H)
+	scrollChild:SetHeight(contentH)
+	scrollFrame:SetHeight(viewH)
+	win:SetHeight(72 + viewH + 44)
 end
 
 -- Players without the minimap button get an account-wide macro "ProfCD" (/pcd):
@@ -394,7 +511,7 @@ local function ensureMacro(force)
 	if not CreateMacro or not GetMacroIndexByName then return end
 	if GetMacroIndexByName(MACRO_NAME) > 0 then db.macroMade = true; return end
 	if db.macroMade and not force then return end
-	if InCombatLockdown() then macroPending, macroForce = true, force; return end
+	if InCombatLockdown() then macroPending, macroForce = true, macroForce or force; return end
 	local accountMacros = GetNumMacros()
 	if accountMacros >= (MAX_ACCOUNT_MACROS or 120) then
 		print(ACCENT_HEX .. "ProfCD:|r no free account macro slot. Type /pcd to open the window.")
@@ -428,34 +545,27 @@ local function buildWindow()
 	win:Check(170, -44, "Show other characters", "Cooldowns and mats of your other characters, as of their last login.",
 		function() return db.showAlts end, function(v) db.showAlts = v; drawWindow() end)
 	win:Check(380, -44, "Chat notice when ready", "A line in the chat when a cooldown of this character is ready.",
-		function() return db.notify end, function(v) db.notify = v end)
+		function() return db.notify end, function(v) db.notify = v; syncNotifyTicker() end)
+	scrollFrame = CreateFrame("ScrollFrame", nil, win, "UIPanelScrollFrameTemplate")
+	scrollFrame:SetPoint("TOPLEFT", 16, -72)
+	scrollFrame:SetPoint("TOPRIGHT", -32, -72)
+	scrollFrame:SetHeight(120)
+	scrollChild = CreateFrame("Frame", nil, scrollFrame)
+	scrollChild:SetWidth(532)
+	scrollChild:SetHeight(1)
+	scrollFrame:SetScrollChild(scrollChild)
 	local acc = 0
+	win:HookScript("OnShow", function() acc = 0 end)
 	win:HookScript("OnUpdate", function(_, e)
 		acc = acc + e
-		if acc >= 1 then acc = 0; drawWindow() end
+		if acc >= 15 then acc = 0; drawWindow() end
 	end)
 end
 
 local function toggleWindow()
+	if not (db and me) then return end
 	if not win then buildWindow() end
 	win:Toggle()
-end
-
----------------------------------------------------------------- notices
-local announced = {}
-local function say(msg) print(ACCENT_HEX .. "ProfCD:|r " .. msg) end
-
-local function checkReady(login)
-	if not (me and db.notify) then return end
-	local now, ready = time(), {}
-	for _, cd in ipairs(TRACKED) do
-		local ra = me.cds[cd.key]
-		if ra and ra <= now and announced[cd.key] ~= ra then
-			announced[cd.key] = ra
-			if login or ra > 0 then ready[#ready + 1] = cd.label end
-		end
-	end
-	if #ready > 0 then say(table.concat(ready, ", ") .. (#ready > 1 and " are" or " is") .. " ready.") end
 end
 
 ---------------------------------------------------------------- minimap, slash
@@ -479,6 +589,7 @@ function ProfCD_OnCompartmentClick() toggleWindow() end
 SLASH_PROFCD1 = "/profcd"
 SLASH_PROFCD2 = "/pcd"
 SlashCmdList.PROFCD = function(msg)
+	if not (db and me) then return end
 	msg = strtrim(msg or "")
 	local cmd, arg = msg:match("^(%S*)%s*(.-)$")
 	cmd = (cmd or ""):lower()
@@ -495,6 +606,7 @@ SlashCmdList.PROFCD = function(msg)
 	elseif cmd == "minimap" then
 		db.showMinimap = not db.showMinimap
 		applyMinimap(true)
+		if win and win:IsShown() then win:Refresh() end
 	else
 		toggleWindow()
 	end
@@ -507,6 +619,7 @@ events:RegisterEvent("PLAYER_LOGIN")
 events:SetScript("OnEvent", function(self, event, arg1)
 	if event == "ADDON_LOADED" then
 		if arg1 ~= ADDON then return end
+		self:UnregisterEvent("ADDON_LOADED")
 		ProfCDDB = ProfCDDB or {}
 		db = ProfCDDB
 		for k, v in pairs(DEFAULTS) do
@@ -516,6 +629,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
 		db.reagents = db.reagents or {}
 		db.minimap = db.minimap or {}
 	elseif event == "PLAYER_LOGIN" then
+		self:UnregisterEvent("PLAYER_LOGIN")
 		myRealm = GetRealmName()
 		local name = UnitName("player")
 		local class = select(2, UnitClass("player"))
@@ -551,19 +665,21 @@ events:SetScript("OnEvent", function(self, event, arg1)
 			-- cooldowns and spells are not reliable in the first moments after login
 			C_Timer.After(5, function()
 				scan()
+				loginReadyDone = true
 				checkReady(true)
-				C_Timer.NewTicker(20, function() checkReady(false) end)
+				syncNotifyTicker()
 			end)
 		else
 			queueScan(2)
 		end
 	elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_UPDATE" then
-		learnReagents()
+		queueLearnReagents()
 		queueScan(1)
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		if macroPending then
 			macroPending = false
 			ensureMacro(macroForce)
+			macroForce = false
 		end
 	elseif event == "PLAYER_LOGOUT" then
 		scan()
