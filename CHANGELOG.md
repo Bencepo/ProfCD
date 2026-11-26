@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.4
 
 - Fixed: chat notifications when a cooldown finishes while online are no longer missed before the 20-second check runs.
 - The ProfCD window now scrolls when many characters and cooldowns are listed instead of growing past the screen edge, updates right away after crafts or bag changes, and no longer rebuilds its full layout every second.
