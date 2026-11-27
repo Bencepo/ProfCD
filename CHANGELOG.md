@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Settings window: "More from Bencepo" button in the footer links to all Bencepo addons (BencepoUI 6).
+
 ## 1.0.4
 
 - Fixed: chat notifications when a cooldown finishes while online are no longer missed before the 20-second check runs.
