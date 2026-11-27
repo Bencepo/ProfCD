@@ -5,7 +5,7 @@ ProfCD: profession cooldown tracker for WoW Forever (Lua 5.1, modern C_Spell/C_I
 ## Layout
 
 - `ProfCD.lua`: everything (tracked list, scanning, tooltip, window, macro, events).
-- `Libs/`: LibStub, CallbackHandler, LibDataBroker, LibDBIcon (minimap button), BencepoUI (shared settings-window toolkit of all Bencepo addons). `opts.bugUrl` gives the "Report a bug" button. BencepoUI must be the same file in each addon (canonical: minor 4, Nov 2026). Change it in one repo, bump the LibStub minor, copy it to the others: two different copies with the same minor make the result depend on load order.
+- `Libs/`: LibStub, CallbackHandler, LibDataBroker, LibDBIcon (minimap button), BencepoUI (shared settings-window toolkit of all Bencepo addons). `opts.bugUrl` gives the "Report a bug" button. BencepoUI must be the same file in each addon (canonical: minor 6, Nov 2026). Change it in one repo, bump the LibStub minor, copy it to the others: two different copies with the same minor make the result depend on load order.
 - `media/logo.png`: project logo for CurseForge, Wago and the website (not packaged).
 
 ## Forever facts (from Ben)
