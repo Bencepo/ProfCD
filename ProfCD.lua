@@ -11,6 +11,10 @@
 -- on their own; until then the Classic recipes below are used.
 
 local ADDON = ...
+local pairs, ipairs, next, type, tonumber = pairs, ipairs, next, type, tonumber
+local floor, max, min, huge = math.floor, math.max, math.min, math.huge
+local tconcat, tsort = table.concat, table.sort
+local format, date, time, GetTime, wipe = format, date, time, GetTime, wipe
 local issecret = issecretvalue or function() return false end
 local BUG_URL = "https://github.com/Bencepo/ProfCD/issues/new/choose"
 local ACCENT = { 0.55, 0.80, 0.95, 1 }
@@ -124,7 +128,7 @@ local function normalize(start, duration)
 	if duration < 60 then return nil end -- global cooldown
 	local t = GetTime()
 	if start > t + 2147483.648 then start = start - 4294967.296 end
-	return math.max(0, start + duration - t)
+	return max(0, start + duration - t)
 end
 
 local function spellCD(id)
@@ -150,10 +154,10 @@ end
 local function fmt(readyAt)
 	local rem = readyAt - time()
 	if rem <= 0 then return "|cff60ff60Ready|r" end
-	local d, h, m = math.floor(rem / 86400), math.floor(rem % 86400 / 3600), math.floor(rem % 3600 / 60)
+	local d, h, m = floor(rem / 86400), floor(rem % 86400 / 3600), floor(rem % 3600 / 60)
 	if d > 0 then return format("%dd %dh", d, h) end
 	if h > 0 then return format("%dh %02dm", h, m) end
-	return format("%dm", math.max(m, 1))
+	return format("%dm", max(m, 1))
 end
 
 local function nameOf(c)
@@ -166,41 +170,45 @@ local function nameOf(c)
 	return n
 end
 
+local missingBuf = {}
+
 local function matStatus(c, r)
-	local missing, inBank, n = nil, false, math.huge
+	wipe(missingBuf)
+	local inBank, n = false, huge
 	for _, rg in ipairs(reagentsOf(r)) do
 		local id, need = rg[1], rg[2]
 		local m = c.mats[id]
 		local bags, total = m and m[1] or 0, m and m[2] or 0
-		n = math.min(n, math.floor(total / need))
+		n = min(n, floor(total / need))
 		if bags < need then
 			if total >= need then
 				inBank = true
 			else
-				missing = missing or {}
-				missing[#missing + 1] = (need - total) .. "x " .. itemName(id)
+				missingBuf[#missingBuf + 1] = (need - total) .. "x " .. itemName(id)
 			end
 		end
 	end
-	if missing then return "|cffff6060Missing: " .. table.concat(missing, ", ") .. "|r" end
+	if #missingBuf > 0 then return "|cffff6060Missing: " .. tconcat(missingBuf, ", ") .. "|r" end
 	local txt = inBank and "|cffffd24dMats in bank|r" or "|cff60ff60Mats in bags|r"
-	if n ~= math.huge and n > 1 then txt = txt .. " |cff8d97a5(" .. n .. "x)|r" end
+	if n ~= huge and n > 1 then txt = txt .. " |cff8d97a5(" .. n .. "x)|r" end
 	return txt
 end
 
 local function sortCharsByName(a, b) return a.name < b.name end
+local charBuf, altBuf = {}, {}
 
 local function charList(alts)
-	local list = { me }
+	wipe(charBuf)
+	charBuf[1] = me
 	if alts then
-		local others = {}
+		wipe(altBuf)
 		for _, c in pairs(db.chars) do
-			if c ~= me and next(c.cds) then others[#others + 1] = c end
+			if c ~= me and next(c.cds) then altBuf[#altBuf + 1] = c end
 		end
-		table.sort(others, sortCharsByName)
-		for i = 1, #others do list[#list + 1] = others[i] end
+		tsort(altBuf, sortCharsByName)
+		for i = 1, #altBuf do charBuf[i + 1] = altBuf[i] end
 	end
-	return list
+	return charBuf
 end
 
 ---------------------------------------------------------------- notices
@@ -210,7 +218,7 @@ local function say(msg) print(ACCENT_HEX .. "ProfCD:|r " .. msg) end
 
 local function announceList(ready)
 	if ready and #ready > 0 then
-		say(table.concat(ready, ", ") .. (#ready > 1 and " are" or " is") .. " ready.")
+		say(tconcat(ready, ", ") .. (#ready > 1 and " are" or " is") .. " ready.")
 	end
 end
 
@@ -272,7 +280,7 @@ local function scan()
 		if not any then
 			me.cds[cd.key] = nil
 		elseif best > 0 then
-			me.cds[cd.key] = math.floor(now + best + 0.5)
+			me.cds[cd.key] = floor(now + best + 0.5)
 		elseif not unsure or prev == nil then
 			-- Detect a cooldown finishing while online before overwriting its timestamp with 0.
 			if loginReadyDone and prev and prev > 0 and announced[cd.key] ~= prev then
@@ -297,7 +305,7 @@ local function scan()
 					if not seenMats[id] then
 						seenMats[id] = true
 						local bags = itemCount(id, false)
-						local total = math.max(itemCount(id, true), bags)
+						local total = max(itemCount(id, true), bags)
 						local slot = me.mats[id]
 						if slot then
 							slot[1], slot[2] = bags, total
@@ -311,7 +319,7 @@ local function scan()
 	end
 	me.seen = now
 	announceList(justReady)
-	if win and win:IsShown() and drawWindow then drawWindow() end
+	drawWindow()
 end
 
 -- Reagents as the open profession window lists them (Classic trade skill API).
@@ -390,7 +398,7 @@ local function forgetChar(c)
 	for key, x in pairs(db.chars) do
 		if x == c and c ~= me then db.chars[key] = nil end
 	end
-	if drawWindow then drawWindow() end
+	drawWindow()
 end
 StaticPopupDialogs["PROFCD_FORGET"] = {
 	text = "Forget %s? Its cooldowns and mats leave ProfCD until it logs in again.",
@@ -444,26 +452,36 @@ local function placeRow(i, y, kind, icon, label, timeTxt, status, other)
 	local parent = scrollChild
 	local r = getRow(i)
 	if kind == "char" and i > 1 then y = y - 8 end
-	r.icon:ClearAllPoints()
-	r.icon:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, y)
+	local hasIcon = icon ~= nil
+	if r.y ~= y then
+		r.icon:ClearAllPoints()
+		r.icon:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, y)
+		r.time:ClearAllPoints()
+		r.time:SetPoint("TOPRIGHT", parent, "TOPLEFT", 284, y - 2)
+		r.status:ClearAllPoints()
+		r.status:SetPoint("TOPLEFT", parent, "TOPLEFT", 300, y - 3)
+		r.forget:ClearAllPoints()
+		r.forget:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -4, y)
+	end
+	if r.y ~= y or r.hasIcon ~= hasIcon then
+		r.label:ClearAllPoints()
+		r.label:SetPoint("TOPLEFT", parent, "TOPLEFT", hasIcon and 22 or 0, y - 2)
+		r.hasIcon = hasIcon
+	end
+	r.y = y
 	if icon then r.icon:SetTexture(icon) end
-	r.icon:SetShown(icon ~= nil)
-	r.label:ClearAllPoints()
-	r.label:SetPoint("TOPLEFT", parent, "TOPLEFT", icon and 22 or 0, y - 2)
-	r.label:SetFontObject(kind == "char" and "GameFontNormal" or "GameFontHighlight")
+	r.icon:SetShown(hasIcon)
+	if r.kind ~= kind then
+		r.label:SetFontObject(kind == "char" and "GameFontNormal" or "GameFontHighlight")
+		r.kind = kind
+	end
 	r.label:SetText(label)
 	r.label:Show()
-	r.time:ClearAllPoints()
-	r.time:SetPoint("TOPRIGHT", parent, "TOPLEFT", 284, y - 2)
 	r.time:SetText(timeTxt or "")
 	r.time:Show()
-	r.status:ClearAllPoints()
-	r.status:SetPoint("TOPLEFT", parent, "TOPLEFT", 300, y - 3)
 	r.status:SetText(status or "")
 	r.status:Show()
 	r.forget.c = other
-	r.forget:ClearAllPoints()
-	r.forget:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -4, y)
 	r.forget:SetShown(other ~= nil)
 	return y - (kind == "char" and 22 or 18)
 end
@@ -494,8 +512,8 @@ drawWindow = function()
 		local r = rows[j]
 		r.icon:Hide(); r.label:Hide(); r.time:Hide(); r.status:Hide(); r.forget:Hide()
 	end
-	local contentH = math.max(-y, 24)
-	local viewH = math.min(contentH, MAX_VIEW_H)
+	local contentH = max(-y, 24)
+	local viewH = min(contentH, MAX_VIEW_H)
 	scrollChild:SetHeight(contentH)
 	scrollFrame:SetHeight(viewH)
 	win:SetHeight(72 + viewH + 44)
@@ -594,9 +612,10 @@ SlashCmdList.PROFCD = function(msg)
 	local cmd, arg = msg:match("^(%S*)%s*(.-)$")
 	cmd = (cmd or ""):lower()
 	if cmd == "forget" and arg ~= "" then
+		local target = arg:lower()
 		local removed = false
 		for key, c in pairs(db.chars) do
-			if c ~= me and (c.name:lower() == arg:lower() or key:lower() == arg:lower()) then
+			if c ~= me and (c.name:lower() == target or key:lower() == target) then
 				db.chars[key] = nil
 				removed = true
 			end
@@ -613,6 +632,12 @@ SlashCmdList.PROFCD = function(msg)
 end
 
 ---------------------------------------------------------------- events
+local LOGIN_EVENTS = {
+	"PLAYER_ENTERING_WORLD", "BAG_UPDATE_DELAYED", "SPELL_UPDATE_COOLDOWN", "SPELLS_CHANGED",
+	"TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "BANKFRAME_OPENED", "PLAYERBANKSLOTS_CHANGED",
+	"PLAYER_LOGOUT", "PLAYER_REGEN_ENABLED",
+}
+
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_LOGIN")
@@ -655,8 +680,7 @@ events:SetScript("OnEvent", function(self, event, arg1)
 		me.mats = me.mats or {}
 		registerMinimap()
 		if not db.showMinimap then ensureMacro(false) end
-		for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "BAG_UPDATE_DELAYED", "SPELL_UPDATE_COOLDOWN", "SPELLS_CHANGED",
-			"TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "BANKFRAME_OPENED", "PLAYERBANKSLOTS_CHANGED", "PLAYER_LOGOUT", "PLAYER_REGEN_ENABLED" }) do
+		for _, e in ipairs(LOGIN_EVENTS) do
 			pcall(self.RegisterEvent, self, e)
 		end
 	elseif event == "PLAYER_ENTERING_WORLD" then
